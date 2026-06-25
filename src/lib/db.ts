@@ -1,11 +1,10 @@
 import { PrismaClient } from '@prisma/client';
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
-// @ts-expect-error missing types
-import Database from 'better-sqlite3';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 
-const dbUrl = process.env.DATABASE_URL || 'file:./dev.db';
-const sqlite = new Database(dbUrl.replace('file:', ''));
-const adapter = new PrismaBetterSqlite3(sqlite);
+const dbUrl = process.env.DATABASE_URL;
+const pool = new Pool({ connectionString: dbUrl });
+const adapter = new PrismaPg(pool);
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
 
