@@ -3,6 +3,8 @@ import { getSessionUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { addXp } from '@/lib/xp';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   const user = await getSessionUser();
   if (!user) {
