@@ -98,6 +98,14 @@ export async function syncIssuesFromGitHub(
   }
 
   try {
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'IssueSwipe-Sync-Service',
+    };
+    if (token && token !== 'undefined' && token !== 'null') {
+      headers['Authorization'] = `token ${token}`;
+    }
+
     const executeRestSearch = async (queryParts: string[]) => {
       const q = encodeURIComponent(queryParts.join(' '));
       // Pick a random page between 1 and 5 to always get fresh issues
@@ -105,15 +113,12 @@ export async function syncIssuesFromGitHub(
       const url = `https://api.github.com/search/issues?q=${q}&per_page=30&page=${page}&sort=updated`;
       console.log(`[Sync] GitHub REST search query: ${queryParts.join(' ')} (Page ${page})`);
       
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `token ${token}`,
-          Accept: 'application/vnd.github.v3+json',
-          'User-Agent': 'IssueSwipe-Sync-Service',
-        },
-      });
+      const response = await fetch(url, { headers });
 
-      if (!response.ok) throw new Error(`GitHub REST API returned status ${response.status}`);
+      if (!response.ok) {
+        console.error(`GitHub Search returned ${response.status}:`, await response.text());
+        throw new Error(`GitHub REST API returned status ${response.status}`);
+      }
       const data = await response.json();
       return (data.items || []).filter((item: any) => !item.pull_request);
     };
@@ -133,7 +138,6 @@ export async function syncIssuesFromGitHub(
       preferredLanguages.forEach(l => queryParts.push(`language:${l}`));
     }
     if (preferredTopics.length > 0) {
-      // For REST, multiple topics might be too restrictive, but we try it
       preferredTopics.forEach(t => queryParts.push(t));
     }
     issues = await executeRestSearch(queryParts);
@@ -156,23 +160,23 @@ export async function syncIssuesFromGitHub(
 
     let syncCount = 0;
 
-    // Fetch Unique Repositories
+    // Fetch Unique Repositories Sequentially to avoid Abuse/Secondary rate limits
     const uniqueRepoUrls = [...new Set(issues.map(i => i.repository_url))];
     const repoDataMap = new Map();
     
-    await Promise.all(uniqueRepoUrls.map(async (repoUrl: unknown) => {
-      if (typeof repoUrl !== 'string') return;
+    for (const repoUrl of uniqueRepoUrls) {
+      if (typeof repoUrl !== 'string') continue;
       try {
-        const repoRes = await fetch(repoUrl, {
-          headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json', 'User-Agent': 'IssueSwipe-Sync-Service' }
-        });
+        const repoRes = await fetch(repoUrl, { headers });
         if (repoRes.ok) {
           repoDataMap.set(repoUrl, await repoRes.json());
+        } else {
+          console.warn(`Failed to fetch repo ${repoUrl} - Status: ${repoRes.status}`);
         }
       } catch (e) {
-        console.warn(`Failed to fetch repo ${repoUrl}`);
+        console.warn(`Error fetching repo ${repoUrl}`);
       }
-    }));
+    }
 
     for (const node of issues) {
       const repoNode = repoDataMap.get(node.repository_url);
