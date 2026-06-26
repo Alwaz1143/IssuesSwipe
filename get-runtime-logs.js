@@ -1,6 +1,7 @@
 const { execSync } = require('child_process');
-const token = "vca_8q4N4L9OQtjDTNWm5JxXpmKsP5kf1nEbyFd6nI4f08KaXciWuH1dh1r8";
-const dpl = "dpl_GrcQTVVWrwtYYryK6JJKUcbwB2oa";
+require('dotenv').config();
+const token = process.env.VERCEL_ACCESS_TOKEN;
+const dpl = process.env.VERCEL_DEPLOYMENT_ID;
 
 async function run() {
   console.log("Triggering request...");

@@ -1,5 +1,6 @@
-const token = "vca_8q4N4L9OQtjDTNWm5JxXpmKsP5kf1nEbyFd6nI4f08KaXciWuH1dh1r8";
-const dpl = "dpl_GrcQTVVWrwtYYryK6JJKUcbwB2oa";
+require('dotenv').config();
+const token = process.env.VERCEL_ACCESS_TOKEN;
+const dpl = process.env.VERCEL_DEPLOYMENT_ID;
 async function run() {
   const res = await fetch(`https://api.vercel.com/v2/now/deployments/${dpl}/events?direction=backward&limit=1000`, {
     headers: { Authorization: `Bearer ${token}` }
