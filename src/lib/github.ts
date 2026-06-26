@@ -96,48 +96,61 @@ export async function syncIssuesFromGitHub(
   }
 
   try {
-    let queryParts = ['is:issue', 'is:open', 'label:"good first issue"', 'sort:updated'];
-    
-    if (preferredLanguages.length > 0) {
-      const langQuery = preferredLanguages.map(l => `language:${l}`).join(' ');
-      queryParts.push(langQuery);
-    }
-    
-    if (preferredTopics.length > 0) {
-      const topicQuery = preferredTopics.join(' ');
-      queryParts.push(topicQuery);
-    }
-    
-    const queryString = queryParts.join(' ');
-    console.log('[Sync] GitHub search query:', queryString);
-
-    const response = await fetch(GITHUB_GRAPHQL_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'IssueSwipe-Sync-Service',
-      },
-      body: JSON.stringify({
-        query: GITHUB_SEARCH_QUERY,
-        variables: {
-          queryString: queryString,
+    // Helper function to execute GraphQL search
+    const executeSearch = async (queryParts: string[]) => {
+      const queryString = queryParts.join(' ');
+      console.log('[Sync] GitHub search query:', queryString);
+      const response = await fetch(GITHUB_GRAPHQL_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'IssueSwipe-Sync-Service',
         },
-      }),
-    });
+        body: JSON.stringify({
+          query: GITHUB_SEARCH_QUERY,
+          variables: { queryString },
+        }),
+      });
 
-    if (!response.ok) {
-      throw new Error(`GitHub API returned status ${response.status}`);
+      if (!response.ok) throw new Error(`GitHub API returned status ${response.status}`);
+      const responseBody = await response.json() as GitHubGraphQLResponse;
+      if (responseBody.errors && responseBody.errors.length > 0) {
+        throw new Error(`GraphQL errors: ${responseBody.errors.map((e) => e.message).join(', ')}`);
+      }
+      return responseBody.data?.search?.edges || [];
+    };
+
+    let edges: any[] = [];
+    const baseQuery = ['is:issue', 'is:open', 'label:"good first issue"', 'sort:updated'];
+    
+    // 1. Try strict match (Languages + Topics)
+    let queryParts = [...baseQuery];
+    if (preferredLanguages.length > 0) {
+      queryParts.push(preferredLanguages.map(l => `language:${l}`).join(' '));
+    }
+    if (preferredTopics.length > 0) {
+      // Use OR for topics to broaden the search
+      queryParts.push(preferredTopics.join(' OR '));
+    }
+    edges = await executeSearch(queryParts);
+
+    // 2. Fallback: Only Languages
+    if (edges.length === 0 && preferredTopics.length > 0) {
+      console.log('[Sync] Strict match returned 0, trying only languages...');
+      queryParts = [...baseQuery];
+      if (preferredLanguages.length > 0) {
+        queryParts.push(preferredLanguages.map(l => `language:${l}`).join(' '));
+      }
+      edges = await executeSearch(queryParts);
     }
 
-    const responseBody = await response.json() as GitHubGraphQLResponse;
-    const { data, errors } = responseBody;
-
-    if (errors && errors.length > 0) {
-      throw new Error(`GraphQL errors: ${errors.map((e) => e.message).join(', ')}`);
+    // 3. Fallback: Broadest possible search
+    if (edges.length === 0 && preferredLanguages.length > 0) {
+      console.log('[Sync] Language match returned 0, trying broad search...');
+      edges = await executeSearch([...baseQuery]);
     }
 
-    const edges = data?.search?.edges || [];
     let syncCount = 0;
 
     for (const edge of edges) {
